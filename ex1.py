@@ -63,15 +63,14 @@ def histogram_equalize(im_orig):
     else:
         im_to_process = im_orig
     hist_orig, bounds = np.histogram(im_to_process, 256)
-    # im_to_process *= 255
-    im_orig *= 255
+    im_orig *= 255 # shallow copy maybe needs change
     hist_mul, bounds2 = np.histogram(im_to_process, 256)
     hist_cs = np.cumsum(hist_mul)
     m = np.nonzero(hist_cs)[0][0]
     T = np.round(255 * (hist_cs - hist_cs[m]) /
-                           (hist_cs[255] - hist_cs[m]))
+                       (hist_cs[255] - hist_cs[m]))
     T = T.astype(int)
-    if len(im_orig.shape) == 3:
+    if dim == 3:
         im_orig[:, :, 0] = T[im_orig[:, :, 0].astype(int)]
     else:
         im_orig = T[im_orig.astype(int)]
@@ -81,23 +80,71 @@ def histogram_equalize(im_orig):
 
 
 def quantize(im_orig, n_quant, n_iter):
-    pass
+    dim = len(im_orig.shape)
+    if dim == 3:
+        yiq_im = rgb2yiq(im_orig)
+        im_to_process = yiq_im[:, :, 0]
+    else:
+        im_to_process = im_orig
+    hist_orig, bounds = np.histogram(im_to_process, 256)
+    hist_orig = hist_orig // 255
+    hist_cum = np.cumsum(hist_orig)
+    z = np.arange(n_quant + 1)
+    z[0] = 0
+    z[n_quant] = 255
+    for i in range(1, n_quant):
+        indices_array = np.where(hist_cum > i * (255 / n_quant))
+        z[i] = indices_array[0][0]
+    q = z = np.arange(n_quant)
+    k = 0
+    error = np.arange(n_iter)
+    while k < n_iter:
+        error_sum = 0
+        for i in range(n_quant - 1):
+            up_sum = 0
+            dw_sum = 0
+            for j in range(z[i + 1] + 1):
+                up_sum += hist_orig[j] * j
+                dw_sum += hist_orig[j]
+            q[i] = up_sum / dw_sum
+            for j in range(z[i + 1] + 1):
+                error_sum += (q[i] - j)**2 * hist_orig[j]
+            if i > 0:
+                z[i] = (q[i - 1] + q[i]) / 2
+        error[k] = error_sum
+        k += 1
+    for i in range(n_quant):
+        for j in range(z[i + 1] + 1):
+            error += (q[i] - j)**2 * hist_orig[j]
+    for i in range(1, n_quant):
+        im_to_process = np.where(z[i - 1] < im_to_process < z[i], q[i])
+    if dim == 3:
+        im_orig[:, :, 0] = im_to_process
+    else:
+        im_orig = im_to_process
+    im_quant = im_orig
+    return [im_quant, error]
+
+
+
+
+
 
 
 
 # mat = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\monkey.jpg", 1)
 # image = histogram_equalize(mat)
-x = np.hstack([np.repeat(np.arange(0, 50, 2), 10)[None, :],
-               np.array([255] * 6)[None, :]])
-grad = np.tile(x.astype(np.float64), (256, 1))
-plt.imshow(grad, cmap=plt.cm.gray)
-plt.show()
-grad /= 255
-y = x.shape
-image = histogram_equalize(grad)
-plt.imshow(image[0], cmap=plt.cm.gray)
-
-plt.show()
+# x = np.hstack([np.repeat(np.arange(0, 50, 2), 10)[None, :],
+#                np.array([255] * 6)[None, :]])
+# grad = np.tile(x.astype(np.float64), (256, 1))
+# plt.imshow(grad, cmap=plt.cm.gray)
+# plt.show()
+# grad /= 255
+# y = x.shape
+# image = histogram_equalize(grad)
+# plt.imshow(image[0], cmap=plt.cm.gray)
+#
+# plt.show()
 
 
 
@@ -128,87 +175,87 @@ plt.show()
 # plt.show()
 
 
-# import skimage.color
-#
-# images = []
-# jer_bw = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\jerusalem.jpg", 1)
-# images.append((jer_bw, "jerusalem grayscale"))
-# jer_rgb = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\jerusalem.jpg", 2)
-# images.append((jer_rgb, "jerusalem RGB"))
-# low_bw = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\low_contrast.jpg", 1)
-# images.append((low_bw, "low_contrast grayscale"))
-# low_rgb = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\low_contrast.jpg", 2)
-# images.append((low_rgb, "low_contrast RGB"))
-# monkey_bw = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\monkey.jpg", 1)
-# images.append((monkey_bw, "monkey grayscale"))
-# monkey_rgb = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\monkey.jpg", 2)
-# images.append((monkey_rgb, "monkey RGB"))
-#
-#
-# def test_rgb2yiq_and_yiq2rgb(im, name):
-#     """
-#     Tests the rgb2yiq and yiq2rgb functions by comparing them to the built in ones in the skimage library.
-#     Allows error to magnitude of 1.e-3 (Difference from built in functions can't be bigger than 0.001).
-#     :param im: The image to test on.
-#     :param name: Name of image.
-#     :return: 1 on success, 0 on failure.
-#     """
-#     imp = rgb2yiq(im)
-#     off = skimage.color.rgb2yiq(im)
-#
-#     if not np.allclose(imp, off, atol=1.e-3):
-#         print("ERROR: in rgb2yiq on image '%s'" % name)
-#         return 0
-#     imp2 = yiq2rgb(imp)
-#     off2 = skimage.color.yiq2rgb(off)
-#     if not np.allclose(imp2, off2, atol=1.e-3):
-#         print("ERROR: in yiq2rgb on image '%s'" % name)
-#         return 0
-#     print("passed conversion test on '%s'" % name)
-#     return 1
-#
-#
-# for im in images:
-#     if len(im[0].shape) == 3:
-#         result = test_rgb2yiq_and_yiq2rgb(im[0], im[1])
-#         if not result:
-#             print("=== Failed Conversion Test ===")
-#             break
-#
-#
-# def display_all(im, add_bonus):
-#     if len(im.shape) == 3 and add_bonus:
-#         fig, a = plt.subplots(nrows=3, ncols=2)
-#     else:
-#         fig, a = plt.subplots(nrows=2, ncols=2)
-#
-#     # adds the regular image
-#     a[0][0].imshow(im, cmap=plt.cm.gray)
-#     a[0][0].set_title(r"original image")
-#
-#     # adds the quantified image
-#     # quant = quantize(im, 3, 10)[0]
-#     # a[0][1].imshow(quant, cmap=plt.cm.gray)
-#     # a[0][1].set_title(r"quantize to 3 levels, 10 iterations")
-#
-#     # adds the histogram equalized image
-#     hist = histogram_equalize(im)[0]
-#     a[1][0].imshow(hist, cmap=plt.cm.gray)
-#     a[1][0].set_title("histogram equalization")
-#
-#     # adds quantization on histogram equalized image
-#     # hist_quant = quantize(hist, 6, 10)[0]
-#     # a[1][1].imshow(hist_quant, cmap=plt.cm.gray)
-#     # a[1][1].set_title("quantize on equalization")
-#
-#     # adds the bonus image
-#     if len(im.shape) == 3 and add_bonus:
-#         # a[2][0].imshow(quantize_rgb(im, 3))
-#         a[2][0].set_title(r"bonus quantize_rgb")
-#
-#     plt.show()
-#
-#
-# for im in images:
-#     # change "False" to "True" if you wish to add the bonus task to the print
-#     display_all(im[0], False)
+import skimage.color
+
+images = []
+jer_bw = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\jerusalem.jpg", 1)
+images.append((jer_bw, "jerusalem grayscale"))
+jer_rgb = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\jerusalem.jpg", 2)
+images.append((jer_rgb, "jerusalem RGB"))
+low_bw = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\low_contrast.jpg", 1)
+images.append((low_bw, "low_contrast grayscale"))
+low_rgb = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\low_contrast.jpg", 2)
+images.append((low_rgb, "low_contrast RGB"))
+monkey_bw = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\monkey.jpg", 1)
+images.append((monkey_bw, "monkey grayscale"))
+monkey_rgb = read_image("C:\\Users\\Roy\PycharmProjects\\ex1IP\\monkey.jpg", 2)
+images.append((monkey_rgb, "monkey RGB"))
+
+
+def test_rgb2yiq_and_yiq2rgb(im, name):
+    """
+    Tests the rgb2yiq and yiq2rgb functions by comparing them to the built in ones in the skimage library.
+    Allows error to magnitude of 1.e-3 (Difference from built in functions can't be bigger than 0.001).
+    :param im: The image to test on.
+    :param name: Name of image.
+    :return: 1 on success, 0 on failure.
+    """
+    imp = rgb2yiq(im)
+    off = skimage.color.rgb2yiq(im)
+
+    if not np.allclose(imp, off, atol=1.e-3):
+        print("ERROR: in rgb2yiq on image '%s'" % name)
+        return 0
+    imp2 = yiq2rgb(imp)
+    off2 = skimage.color.yiq2rgb(off)
+    if not np.allclose(imp2, off2, atol=1.e-3):
+        print("ERROR: in yiq2rgb on image '%s'" % name)
+        return 0
+    print("passed conversion test on '%s'" % name)
+    return 1
+
+
+for im in images:
+    if len(im[0].shape) == 3:
+        result = test_rgb2yiq_and_yiq2rgb(im[0], im[1])
+        if not result:
+            print("=== Failed Conversion Test ===")
+            break
+
+
+def display_all(im, add_bonus):
+    if len(im.shape) == 3 and add_bonus:
+        fig, a = plt.subplots(nrows=3, ncols=2)
+    else:
+        fig, a = plt.subplots(nrows=2, ncols=2)
+
+    # adds the regular image
+    a[0][0].imshow(im, cmap=plt.cm.gray)
+    a[0][0].set_title(r"original image")
+
+    # adds the quantified image
+    # quant = quantize(im, 3, 10)[0]
+    # a[0][1].imshow(quant, cmap=plt.cm.gray)
+    # a[0][1].set_title(r"quantize to 3 levels, 10 iterations")
+
+    # adds the histogram equalized image
+    hist = histogram_equalize(im)[0]
+    a[1][0].imshow(hist, cmap=plt.cm.gray)
+    a[1][0].set_title("histogram equalization")
+
+    # adds quantization on histogram equalized image
+    hist_quant = quantize(hist, 6, 10)[0]
+    a[1][1].imshow(hist_quant, cmap=plt.cm.gray)
+    a[1][1].set_title("quantize on equalization")
+
+    # adds the bonus image
+    if len(im.shape) == 3 and add_bonus:
+        # a[2][0].imshow(quantize_rgb(im, 3))
+        a[2][0].set_title(r"bonus quantize_rgb")
+
+    plt.show()
+
+
+for im in images:
+    # change "False" to "True" if you wish to add the bonus task to the print
+    display_all(im[0], False)
