@@ -79,53 +79,6 @@ def histogram_equalize(im_orig):
     return [im_orig, hist_orig, hist_eq]
 
 
-# def quantize(im_orig, n_quant, n_iter):
-#     dim = len(im_orig.shape)
-#     if dim == 3:
-#         yiq_im = rgb2yiq(im_orig)
-#         im_to_process = yiq_im[:, :, 0]
-#     else:
-#         im_to_process = im_orig
-#     im_to_process *= 255
-#     hist_orig, bounds = np.histogram(im_to_process, 256)
-#     hist_orig = hist_orig // 255
-#     hist_cum = np.cumsum(hist_orig)
-#     z = np.arange(n_quant + 1)
-#     z[0] = 0
-#     z[n_quant] = 255
-#     for i in range(1, n_quant):
-#         indices_array = np.where(hist_cum > i * (255 / n_quant))
-#         z[i] = indices_array[0][0]
-#     q =  np.arange(n_quant)
-#     k = 0
-#     error = np.arange(n_iter)
-#     z_new = np.arange(n_quant + 1)
-#     z_new[0] = 0
-#     z_new[n_quant] = 255
-#     while k < n_iter:
-#         error_sum = 0
-#         for i in range(n_quant - 1):
-#             up_sum = 0
-#             dw_sum = 0
-#             for j in range(z[i] + 1, z[i + 1] + 1):
-#                 up_sum += hist_orig[j] * j
-#                 dw_sum += hist_orig[j]
-#             q[i] = up_sum / dw_sum
-#             for j in range(z[i] + 1, z[i + 1] + 1):
-#                 error_sum += (q[i] - j)**2 * hist_orig[j]
-#             if n_quant > i > 0:
-#                 z_new[i] = (q[i - 1] + q[i]) / 2
-#         error[k] = error_sum
-#         k += 1
-    # for i in range(1, n_quant):
-    #     im_to_process = np.where(z[i - 1] < im_to_process < z[i], q[i])
-    # if dim == 3:
-    #     im_orig[:, :, 0] = im_to_process
-    # else:
-    #     im_orig = im_to_process
-    # im_quant = im_orig / 255
-    # return [im_quant, error]
-
 def quantize(im_orig, n_quant, n_iter):
     dim = len(im_orig.shape)
     if dim == 3:
@@ -135,44 +88,51 @@ def quantize(im_orig, n_quant, n_iter):
         im_to_process = im_orig[:]
     im_to_process *= 255
     hist_orig, bounds = np.histogram(im_to_process, 256)
-    hist_orig = hist_orig // 255
+    hist_orig = hist_orig
     hist_cum = np.cumsum(hist_orig)
     z = np.arange(n_quant + 1)
     z[0] = -1
     z[n_quant] = 255
     q = np.arange(n_quant)
-    for i in range(1, n_quant):
+    for i in range(1, n_quant + 1):
         up_sum = 0
         dw_sum = 0
-        indices_array = np.where(hist_cum > i * (255 / n_quant))
-        z[i] = indices_array[0][0]
+        indices_array = np.where(hist_cum > i * (hist_cum[255] / n_quant))
+        if i != n_quant:
+            z[i] = indices_array[0][0]
         for j in range(z[i - 1] + 1, z[i] + 1):
             up_sum += hist_orig[j] * j
             dw_sum += hist_orig[j]
         q[i - 1] = up_sum / dw_sum
     k = 0
-    error = np.empty(1)
+    error = np.zeros(0)
     z_new = np.arange(n_quant + 1)
-    z_new[0] = 0
+    z_new[0] = -1
     z_new[n_quant] = 255
     while k < n_iter:
         error_sum = 0
-        up_sum = 0
-        dw_sum = 0
-        for i in range(1, n_quant):
-            z_new[i] = (q[i - 1] + q[i]) / 2
+        for i in range(1, n_quant + 1):
+            up_sum = 0
+            dw_sum = 0
+            if i != n_quant:
+                z_new[i] = (q[i - 1] + q[i]) / 2
+            else:
+                z_new[i] = z[i]
             for j in range(z_new[i - 1] + 1, z_new[i] + 1):
                 up_sum += hist_orig[j] * j
                 dw_sum += hist_orig[j]
-                error_sum += (q[i - 1] - j) ** 2 * hist_orig[j]
             q[i - 1] = up_sum / dw_sum
-        np.append(error, error_sum)
+            for j in range(z_new[i - 1] + 1, z_new[i] + 1):
+                error_sum += ((q[i - 1] - j) ** 2) * hist_orig[j]
+        error = np.append(error, error_sum)
         k += 1
-        if np.equal(z, z_new).all:
+        if np.array_equal(z, z_new):
             break
-    for i in range(1, n_quant):
-        im_to_process = np.where((im_to_process <= z[i]) & (im_to_process >= z[i]),
-                                 q[i], im_to_process)
+        z = np.copy(z_new)
+    map_vector = np.zeros(256)
+    for i in range(0, n_quant):
+        map_vector[z[i] + 1:z[i + 1] + 1] = q[i]
+    im_to_process = map_vector[im_to_process.astype(np.int32)]
     im_to_process /= 255
     if dim == 3:
         yiq_im[:, :, 0] = im_to_process
@@ -193,11 +153,10 @@ def quantize(im_orig, n_quant, n_iter):
 # x = np.hstack([np.repeat(np.arange(0, 50, 2), 10)[None, :],
 #                np.array([255] * 6)[None, :]])
 # grad = np.tile(x.astype(np.float64), (256, 1))
-# plt.imshow(grad, cmap=plt.cm.gray)
-# plt.show()
 # grad /= 255
 # y = x.shape
-# # image = quantize(grad, )
+# z = histogram_equalize(grad)
+# image = quantize(z[0], 5, 5)
 #
 # plt.imshow(image[0], cmap=plt.cm.gray)
 #
@@ -306,9 +265,9 @@ def display_all(im, add_bonus):
     a[1][1].set_title("quantize on equalization")
 
     # adds the bonus image
-    if len(im.shape) == 3 and add_bonus:
+    # if len(im.shape) == 3 and add_bonus:
         # a[2][0].imshow(quantize_rgb(im, 3))
-        a[2][0].set_title(r"bonus quantize_rgb")
+        # a[2][0].set_title(r"bonus quantize_rgb")
 
     plt.show()
 
