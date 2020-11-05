@@ -1,0 +1,3 @@
+Q1 Answer : We need all level segmant will have a pixel in their level
+so we won't devide by zero in our Q seeking iteration. thats could happen
+if we sum over levels with no pixels in Z for a specific q_i. 
