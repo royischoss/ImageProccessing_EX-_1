@@ -135,22 +135,22 @@ def quantize(im_orig, n_quant, n_iter):
     im_to_process *= 255
     hist_orig, bounds = np.histogram(im_to_process, 256)
     hist_cum = np.cumsum(hist_orig)
-    z = np.arange(n_quant + 1)
+    z = np.zeros(n_quant + 1)
     z[0] = -1
     z[n_quant] = 255
-    q = np.arange(n_quant)
+    q = np.zeros(n_quant)
     # initialization :
     for i in range(1, n_quant + 1):
         indices_array = np.where(hist_cum > i * (hist_cum[255] / n_quant))
         if i != n_quant:
             z[i] = indices_array[0][0]
-        up_sum = np.sum(np.dot(hist_orig[z[i - 1] + 1:z[i] + 1],
-                               np.arange(z[i - 1] + 1, z[i] + 1).T))
-        dw_sum = np.sum(hist_orig[z[i - 1] + 1:z[i] + 1])
+        up_sum = np.sum(np.dot(hist_orig[int(z[i - 1]) + 1:int(z[i]) + 1],
+                               np.arange(int(z[i - 1]) + 1, int(z[i]) + 1).T))
+        dw_sum = np.sum(hist_orig[int(z[i - 1]) + 1:int(z[i] + 1)])
         q[i - 1] = up_sum / dw_sum
     k = 0
     error = np.zeros(0)
-    z_new = np.arange(n_quant + 1)
+    z_new = np.zeros(n_quant + 1)
     z_new[0] = -1
     z_new[n_quant] = 255
     # start of iterations:
@@ -161,15 +161,15 @@ def quantize(im_orig, n_quant, n_iter):
                 z_new[i] = (q[i - 1] + q[i]) / 2
             else:
                 z_new[i] = z[i]
-            up_sum = np.sum(np.dot(hist_orig[z_new[i - 1] + 1:z_new[i] + 1],
-                                   np.arange(z_new[i - 1] + 1,
-                                             z_new[i] + 1).T))
-            dw_sum = np.sum(hist_orig[z_new[i - 1] + 1:z_new[i] + 1])
+            up_sum = np.sum(np.dot(hist_orig[int(z_new[i - 1]) + 1:int(z_new[i]) + 1],
+                                   np.arange(int(z_new[i - 1]) + 1,
+                                             int(z_new[i]) + 1).T))
+            dw_sum = np.sum(hist_orig[int(z_new[i - 1]) + 1:int(z_new[i]) + 1])
             q[i - 1] = up_sum / dw_sum
-            g = np.arange(z_new[i - 1] + 1, z_new[i] + 1)
-            q_values = np.full((1, z_new[i] - z_new[i - 1]), q[i - 1])
+            g = np.arange(int(z_new[i - 1] + 1), int(z_new[i] + 1)).astype(np.float64)
+            q_values = np.full((1, int(z_new[i]) - int(z_new[i - 1])), q[i - 1])
             error_sum += np.dot((q_values - g) ** 2,
-                                hist_orig[z_new[i - 1] + 1:z_new[i] + 1])
+                                hist_orig[int(z_new[i - 1]) + 1:int(z_new[i]) + 1])
         error = np.append(error, error_sum)
         k += 1
         # stopping condition:
@@ -178,6 +178,8 @@ def quantize(im_orig, n_quant, n_iter):
         z = np.copy(z_new)
     # creating a look up table for the grayscale levels.
     map_vector = np.zeros(256)
+    q = q.astype(np.int32)
+    z = z.astype(np.int32)
     for i in range(0, n_quant):
         map_vector[z[i] + 1:z[i + 1] + 1] = q[i]
     # making the change in grayscale levels on the photo.
