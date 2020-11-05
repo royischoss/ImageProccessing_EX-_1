@@ -3,12 +3,15 @@
 # the next script is basic functions for reading and transforming images
 # and editing their grayscale deviation for different needs.
 ##############################################################################
-
 import numpy as np
 from imageio import imread, imwrite
 import matplotlib.pyplot as plt
 from skimage.color import rgb2gray
 
+MAX_SEGMENT = 255
+HIST_RANGE = (0, 1)
+BINS = 256
+Z_0 = -1
 
 def read_image(filename, representation):
     """
@@ -23,7 +26,7 @@ def read_image(filename, representation):
         image_mat = np.array(rgb2gray(image))
     else:
         image_mat = np.array(image.astype(np.float64))
-        image_mat /= 255
+        image_mat /= MAX_SEGMENT
     return image_mat
 
 
@@ -93,26 +96,29 @@ def histogram_equalize(im_orig):
         im_to_process = np.copy(yiq_im[:, :, 0])
     else:
         im_to_process = np.copy(im_orig)
-    im_to_process *= 255  # multiplying by 255 for us not to round values to
-    # zero in the look up table initializing.
-    hist_orig, bounds2 = np.histogram(im_to_process, 256)
+    hist_orig, bounds2 = np.histogram(im_to_process, BINS, range=HIST_RANGE)
     hist_cs = np.cumsum(hist_orig)
     m = np.nonzero(hist_cs)[0][0]
-    T = np.round(255 * (hist_cs - hist_cs[m]) /
-                 (hist_cs[255] - hist_cs[m]))  # initializing the look-up table
+    T = np.round(MAX_SEGMENT * (hist_cs - hist_cs[m]) /
+                 (hist_cs[MAX_SEGMENT] - hist_cs[m]))  # initializing the look-up table
     # in this step we take care we go from 0-255 ,we normalize and we
     # multiply by (z - 1) value.
+    im_to_process *= MAX_SEGMENT
     T = T.astype(int)
     if dim == 3:
         im_eq = np.copy(yiq_im)
         im_to_process = T[im_to_process.astype(int)]
-        im_eq[:, :, 0] = np.copy(im_to_process)
-        hist_eq, bounds = np.histogram(im_to_process, 256)
+        im_eq[:, :, 0] = np.copy(im_to_process).astype(np.float64)
+        # dividing so we get [0,1] matrix:
+        im_eq[:, :, 0] = im_eq[:, :, 0] / MAX_SEGMENT
+        hist_eq, bounds = np.histogram(im_to_process, BINS, range=HIST_RANGE)
         im_eq = yiq2rgb(im_eq)
     else:
         im_eq = (T[im_to_process.astype(int)])
-        hist_eq = np.histogram(im_eq, 256)  # taking the equalized histogram.
-    im_eq = im_eq / 255  # dividing so we get [0,1] matrix.
+        im_eq = im_eq.astype(np.float64)  # dividing so we get [0,1] matrix.
+        im_eq = im_eq / MAX_SEGMENT
+        # taking the equalized histogram.
+        hist_eq = np.histogram(im_eq, BINS, range=HIST_RANGE)
     return [im_eq, hist_orig, hist_eq]
 
 
@@ -132,16 +138,15 @@ def quantize(im_orig, n_quant, n_iter):
         im_to_process = yiq_im[:, :, 0]
     else:
         im_to_process = im_orig[:]
-    im_to_process *= 255
-    hist_orig, bounds = np.histogram(im_to_process, 256)
+    hist_orig, bounds = np.histogram(im_to_process, BINS, range=HIST_RANGE)
     hist_cum = np.cumsum(hist_orig)
     z = np.zeros(n_quant + 1)
-    z[0] = -1
-    z[n_quant] = 255
+    z[0] = Z_0
+    z[n_quant] = MAX_SEGMENT
     q = np.zeros(n_quant)
     # initialization :
     for i in range(1, n_quant + 1):
-        indices_array = np.where(hist_cum > i * (hist_cum[255] / n_quant))
+        indices_array = np.where(hist_cum > i * (hist_cum[MAX_SEGMENT] / n_quant))
         if i != n_quant:
             z[i] = indices_array[0][0]
         up_sum = np.sum(np.dot(hist_orig[int(z[i - 1]) + 1:int(z[i]) + 1],
@@ -151,8 +156,8 @@ def quantize(im_orig, n_quant, n_iter):
     k = 0
     error = np.zeros(0)
     z_new = np.zeros(n_quant + 1)
-    z_new[0] = -1
-    z_new[n_quant] = 255
+    z_new[0] = Z_0
+    z_new[n_quant] = MAX_SEGMENT
     # start of iterations:
     while k < n_iter:
         error_sum = 0
@@ -180,16 +185,17 @@ def quantize(im_orig, n_quant, n_iter):
     map_vector = np.zeros(256)
     q = q.astype(np.int32)
     z = z.astype(np.int32)
+    im_to_process *= MAX_SEGMENT
     for i in range(0, n_quant):
         map_vector[z[i] + 1:z[i + 1] + 1] = q[i]
     # making the change in grayscale levels on the photo.
     im_to_process = map_vector[im_to_process.astype(np.int32)]
-    im_to_process /= 255
+    im_to_process /= MAX_SEGMENT
     if dim == 3:
         yiq_im[:, :, 0] = im_to_process
         im_quant = yiq2rgb(yiq_im)
     else:
-        im_orig /= 255
+        im_orig /= MAX_SEGMENT
         im_quant = im_to_process
     return [im_quant, error]
 
